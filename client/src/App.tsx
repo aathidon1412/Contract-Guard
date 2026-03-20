@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Toaster } from 'react-hot-toast'
 
 import Layout from "./components/layout/Layout";
 import Conflicts from "./pages/Conflicts";
@@ -17,6 +18,28 @@ function App() {
           <Route path="/result/:sessionId" element={<Result />} />
         </Routes>
       </Layout>
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: "#1e293b",
+            color: "#f1f5f9",
+            border: "1px solid #334155"
+          },
+          success: {
+            iconTheme: {
+              primary: "#22c55e",
+              secondary: "#1e293b"
+            }
+          },
+          error: {
+            iconTheme: {
+              primary: "#ef4444",
+              secondary: "#1e293b"
+            }
+          }
+        }}
+      />
     </BrowserRouter>
   );
 }

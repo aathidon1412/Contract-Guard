@@ -840,6 +840,59 @@ const inferConfidence = (
   return "medium";
 };
 
+const parseMongooseSchema = (fileContent: string): Map<string, { type?: string; required: boolean }> => {
+  const schemaMap = new Map<string, { type?: string; required: boolean }>();
+  if (!fileContent) return schemaMap;
+
+  const search = fileContent;
+  const schemaMatchIndex = search.search(/new\s+mongoose\.Schema|mongoose\.Schema\s*\(|new\s+Schema\s*\(/);
+  if (schemaMatchIndex === -1) return schemaMap;
+
+  const openParen = search.indexOf("(", schemaMatchIndex);
+  if (openParen === -1) return schemaMap;
+  const closeParen = findBalancedClosingParen(search, openParen);
+  if (closeParen === -1) return schemaMap;
+
+  const schemaBody = search.slice(openParen + 1, closeParen);
+  const entries = extractObjectKeys(schemaBody);
+
+  entries.forEach(({ key, value }) => {
+    let type: string | undefined = undefined;
+    let required = false;
+    const v = value.trim();
+
+    const shorthand = v.match(/^\[?\s*([A-Za-z0-9_]+)\s*\]?/);
+    if (shorthand) {
+      const token = shorthand[1];
+      if (token === "String") type = "string";
+      else if (token === "Number") type = "number";
+      else if (token === "Boolean") type = "boolean";
+      else if (token === "Date") type = "date";
+      else if (token === "Decimal128") type = "float";
+    }
+
+    const typeMatch = value.match(/type\s*:\s*(?:mongoose\.Schema\.Types\.)?([A-Za-z0-9_\[\]]+)/);
+    if (typeMatch) {
+      const t = typeMatch[1];
+      if (t === "String") type = "string";
+      else if (t === "Number") type = "number";
+      else if (t === "Boolean") type = "boolean";
+      else if (t === "Date") type = "date";
+      else if (/Decimal128/.test(t)) type = "float";
+      else if (/^\[\s*String\s*\]$/.test(t)) type = "array<string>";
+    }
+
+    const requiredMatch = value.match(/required\s*:\s*(true|false)/);
+    if (requiredMatch) {
+      required = requiredMatch[1] === "true";
+    }
+
+    schemaMap.set(key, { type, required });
+  });
+
+  return schemaMap;
+};
+
 const parseExpressRoutes = (fileContent: string) => {
   const routes: Array<{ method: HttpMethod; path: string; args: string[]; lineNumber: number }> = [];
   const routeRegex = /(app|router)\.(get|post|put|delete|patch)\s*\(/gi;
@@ -1371,6 +1424,90 @@ export const extractFromFile = (
         : handlerTokens[0]?.isInline
           ? "inline"
           : "reference";
+
+    // Merge model schema fields (if any) with controller-derived request fields
+    const modelFieldMap = new Map<string, { type?: string; required: boolean }>();
+    try {
+      // Inspect each handler source to find model imports
+      for (const h of handlerInfo) {
+        const found = h.foundIn ?? normalizedFilePath;
+        const content = allProjectFiles.get(found);
+        if (!content) continue;
+
+        const requireRegex = /require\(\s*['"]([^'"]*models\/[\w-]+)['"]\s*\)/g;
+        let rm;
+        while ((rm = requireRegex.exec(content))) {
+          const imp = `require('${rm[1]}')`;
+          const resolved = resolveImportPath(imp, found, allProjectFiles);
+          if (!resolved) continue;
+          const modelContent = allProjectFiles.get(resolved);
+          if (!modelContent) continue;
+          const parsed = parseMongooseSchema(modelContent);
+          parsed.forEach((v, k) => modelFieldMap.set(k, v));
+        }
+
+        const importRegex = /import\s+[^'"\n]+\s+from\s+['"]([^'"]*models\/[\w-]+)['"]/g;
+        let im;
+        while ((im = importRegex.exec(content))) {
+          const imp = `from '${im[1]}'`;
+          const resolved = resolveImportPath(imp, found, allProjectFiles);
+          if (!resolved) continue;
+          const modelContent = allProjectFiles.get(resolved);
+          if (!modelContent) continue;
+          const parsed = parseMongooseSchema(modelContent);
+          parsed.forEach((v, k) => modelFieldMap.set(k, v));
+        }
+      }
+    } catch (e) {
+      // don't fail extraction on model parse issues
+    }
+
+    // Apply model types/required flags to request fields
+    if (modelFieldMap.size > 0) {
+      requestFields.forEach((f) => {
+        const m = modelFieldMap.get(f.name);
+        if (m) {
+          f.type = m.type ?? f.type;
+          f.required = f.required || m.required;
+        }
+      });
+    }
+
+    const requiredFields: Field[] = [];
+    const optionalFields: Field[] = [];
+    if (modelFieldMap.size > 0) {
+      modelFieldMap.forEach((info, name) => {
+        const fld: Field = { name, source: "body", required: info.required, type: info.type };
+        if (info.required) requiredFields.push(fld);
+        else optionalFields.push(fld);
+      });
+      // Ensure controller-only fields are included if not in model
+      requestFields.forEach((f) => {
+        if (!modelFieldMap.has(f.name)) {
+          if (f.required) requiredFields.push(f);
+          else optionalFields.push(f);
+        }
+      });
+    } else {
+      // Fallback: split controller fields into required/optional
+      requestFields.forEach((f) => {
+        if (f.required) requiredFields.push(f);
+        else optionalFields.push(f);
+      });
+    }
+
+    // Debug log to verify extraction of model fields
+    try {
+      // eslint-disable-next-line no-console
+      console.log("Extracted endpoint:", {
+        path: route.path,
+        method: route.method,
+        requiredFields: requiredFields.map((r) => ({ name: r.name, type: r.type, required: r.required })),
+        optionalFields: optionalFields.map((r) => ({ name: r.name, type: r.type, required: r.required })),
+      });
+    } catch (e) {
+      // ignore logging failures
+    }
 
     return {
       method: route.method,

@@ -349,11 +349,18 @@ function Repository() {
             const conflicts = (branch as Branch & { conflicts?: number }).conflicts ?? 0;
 
             return (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 key={branch.id}
                 onClick={() => void handleToggleBranch(branch)}
-                className="card text-left transition hover:border-brand-600"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    void handleToggleBranch(branch)
+                  }
+                }}
+                className="card text-left transition hover:border-brand-600 cursor-pointer"
               >
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="truncate text-base font-semibold text-white">
@@ -379,7 +386,7 @@ function Repository() {
                 <p className="mt-2 text-xs text-slate-400">
                   Last scanned: {formatLastScanned(branch.lastScanned)}
                 </p>
-              </button>
+              </div>
             );
           })}
         </div>
