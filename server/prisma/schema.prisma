@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Repository {
+  id          Int       @id @default(autoincrement())
+  name        String
+  fullName    String    @unique
+  githubUrl   String
+  description String?
+  language    String?
+  totalApis   Int       @default(0)
+  status      String    @default("active")
+  lastScanned DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  branches    Branch[]
+  sessions    ConflictSession[]
+}
+
+model Branch {
+  id          Int        @id @default(autoincrement())
+  repoId      Int
+  name        String
+  type        String
+  totalApis   Int        @default(0)
+  scanStatus  String     @default("pending")
+  lastScanned DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  repo        Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  endpoints   ApiEndpoint[]
+
+  @@unique([repoId, name])
+}
+
+model ApiEndpoint {
+  id             Int      @id @default(autoincrement())
+  branchId       Int
+  path           String
+  method         String
+  lineStart      Int
+  lineEnd        Int
+  requiredFields Json     @default("[]")
+  optionalFields Json     @default("[]")
+  responseFields Json     @default("[]")
+  rawDefinition  String   @default("")
+  yamlContent    String   @default("")
+  fileName       String   @default("")
+  createdAt      DateTime @default(now())
+  branch         Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+}
+
+model ConflictSession {
+  id             Int        @id @default(autoincrement())
+  repoId         Int
+  mainBranchId   Int
+  branchIds      Json
+  status         String     @default("draft")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  repo           Repository @relation(fields: [repoId], references: [id])
+  conflicts      Conflict[]
+  scenarios      CrossBranchScenario[]
+}
+
+model Conflict {
+  id           Int             @id @default(autoincrement())
+  sessionId    Int
+  type         String
+  fieldName    String
+  endpoint     String
+  method       String
+  mainValue    String          @default("")
+  branchValue  String          @default("")
+  impactLevel  String
+  resolution   String?
+  lineMain     Int             @default(0)
+  lineBranch   Int             @default(0)
+  branchName   String
+  status       String          @default("unresolved")
+  createdAt    DateTime        @default(now())
+  session      ConflictSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model CrossBranchScenario {
+  id               Int             @id @default(autoincrement())
+  sessionId        Int
+  scenarioType     String
+  fieldName        String          @default("")
+  affectedEndpoint String          @default("")
+  involvedBranches Json
+  popupRequired    Boolean         @default(true)
+  autoResolved     Boolean         @default(false)
+  chosenOption     String?
+  status           String          @default("pending")
+  createdAt        DateTime        @default(now())
+  session          ConflictSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

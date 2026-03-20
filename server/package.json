@@ -1,0 +1,31 @@
+{
+  "name": "contractguard-server",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "latest",
+    "@prisma/client": "^6.19",
+    "axios": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "js-yaml": "latest",
+    "multer": "latest",
+    "pg": "^8.20.0",
+    "uuid": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/js-yaml": "latest",
+    "@types/multer": "latest",
+    "@types/node": "latest",
+    "@types/uuid": "latest",
+    "prisma": "^6.19",
+    "ts-node-dev": "latest",
+    "typescript": "latest"
+  }
+}
